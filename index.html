@@ -1,0 +1,523 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>MapWithFriends — Cultural Connections</title>
+
+    <link rel="stylesheet" href="https://unpkg.com/jsvectormap/dist/css/jsvectormap.min.css" />
+
+    <style>
+        html, body {
+            margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+            background-color: #f2f2f7; -webkit-font-smoothing: antialiased;
+        }
+
+        #map-container {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: #ffffff; z-index: 1;
+        }
+
+        /* Oculta os botões nativos de zoom da biblioteca para um visual mais clean */
+        .jvm-zoom-btn {
+            display: none !important;
+        }
+
+        /* Top bar with search, auth status and menu button */
+        .top-bar {
+            position: absolute; top: 20px; left: 50%; transform: translateX(-50%);
+            width: 92%; max-width: 460px; z-index: 10;
+            display: flex; gap: 8px; align-items: center;
+        }
+
+        .search-container {
+            flex-grow: 1; min-width: 0;
+            background: rgba(255, 255, 255, 0.88);
+            backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+            border-radius: 14px; padding: 10px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.08);
+            display: flex; align-items: center;
+        }
+
+        #country-selector {
+            width: 100%; border: none; background: transparent;
+            font-size: 15px; color: #1c1c1e; outline: none; font-weight: 500;
+        }
+
+        .auth-btn, .list-btn {
+            background: rgba(255, 255, 255, 0.88);
+            backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+            color: #1c1c1e; border: none; border-radius: 14px;
+            height: 40px; cursor: pointer;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.08);
+            display: flex; align-items: center; justify-content: center;
+            font-size: 13px; font-weight: 600; white-space: nowrap;
+        }
+
+        .auth-btn {
+            padding: 0 12px; gap: 6px;
+        }
+
+        .auth-btn.signed-in {
+            background: rgba(52, 199, 89, 0.16);
+            color: #1e7e34;
+            border: 1px solid rgba(52, 199, 89, 0.45);
+        }
+
+        .list-btn {
+            padding: 0 14px;
+        }
+
+        .modal-overlay {
+            display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0, 0, 0, 0.5); backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px);
+            z-index: 9999; justify-content: center; align-items: flex-end;
+        }
+
+        .modal-content {
+            background: #ffffff; width: 100%; max-width: 640px; margin: 0 auto;
+            max-height: 90vh; border-radius: 20px 20px 0 0;
+            padding: 20px; box-sizing: border-box; overflow-y: auto; -webkit-overflow-scrolling: touch;
+            animation: slideUp 0.3s ease-out;
+        }
+
+        @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+
+        h2 { margin: 0 0 4px 0; font-size: 22px; color: #1c1c1e; }
+        p.subtitle { color: #8e8e93; font-size: 13px; margin: 0 0 16px 0; }
+        label { display: block; margin-top: 12px; font-size: 14px; font-weight: 600; color: #3a3a3c; }
+
+        input[type="text"] {
+            width: 100%; padding: 12px; margin-top: 6px; border: 1px solid #d1d1d6;
+            border-radius: 10px; font-size: 16px; box-sizing: border-box;
+            background: #f2f2f7; appearance: none;
+        }
+
+        button.submit-btn {
+            width: 100%; background: #34c759; color: white; padding: 16px; border: none;
+            border-radius: 12px; font-size: 18px; font-weight: 600; margin-top: 24px; cursor: pointer;
+        }
+
+        button.login-prompt-btn {
+            width: 100%; background: #007aff; color: white; padding: 14px; border: none;
+            border-radius: 12px; font-size: 15px; font-weight: 600; margin-top: 14px; cursor: pointer;
+        }
+
+        .locked-box {
+            margin-top: 20px; padding: 16px; border-radius: 12px;
+            background: #f2f2f7; border: 1px solid #e5e5ea;
+            font-size: 14px; color: #3a3a3c; line-height: 1.45;
+        }
+
+        button.close-btn {
+            width: 100%; background: transparent; color: #007aff; padding: 12px; border: none;
+            font-size: 16px; margin-top: 8px; cursor: pointer; font-weight: 600;
+        }
+
+        .history-card { background: #e5e5ea; padding: 14px; border-radius: 12px; margin-bottom: 12px; }
+        .history-card h4 { margin: 0 0 8px 0; font-size: 16px; color: #1c1c1e; }
+        .history-card p { margin: 4px 0; font-size: 14px; color: #1c1c1e; }
+        .history-card span { font-weight: bold; color: #007aff; }
+        .loader { text-align: center; color: #8e8e93; padding: 16px; display: none; font-size: 14px; }
+        .form-title { margin-top: 20px; font-size: 18px; color: #1c1c1e; border-top: 1px solid #e5e5ea; padding-top: 16px; }
+    </style>
+</head>
+<body>
+
+    <div class="top-bar">
+        <div class="search-container">
+            <select id="country-selector">
+                <option value="" disabled selected>🔍 Search...</option>
+            </select>
+        </div>
+        <button class="auth-btn" id="auth-btn" type="button" title="Owner Login">
+            <span id="auth-label">Sign in</span>
+        </button>
+        <button class="list-btn" id="view-all-btn" type="button" title="All Connections">
+            <svg viewBox="0 0 24 24" width="22" height="22" stroke="#1c1c1e" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="4" y1="9" x2="20" y2="9"></line>
+                <line x1="4" y1="15" x2="20" y2="15"></line>
+            </svg>
+        </button>
+    </div>
+
+    <div id="map-container"></div>
+
+    <div class="modal-overlay" id="modal">
+        <div class="modal-content">
+            <h2 id="country-title">🌍 Country Name</h2>
+            <p class="subtitle">Cultural recommendations</p>
+
+            <div id="previous-answers"></div>
+
+            <div id="owner-form-section" style="display: none;">
+                <h3 class="form-title">Add New Recommendation</h3>
+                <form id="recommendation-form">
+                    <label>✅ What local food do I gotta try?</label>
+                    <input type="text" id="q1_food" required>
+                    <label>🏙️ Which city should I definitely check out?</label>
+                    <input type="text" id="q2_city" required>
+                    <label>⛰️ Any cool spots to explore outside town?</label>
+                    <input type="text" id="q3_nature" required>
+                    <label>🎶 Any local artists I should add to my Spotify?</label>
+                    <input type="text" id="q4_music" required>
+                    <label>😀 What's your name?</label>
+                    <input type="text" id="q5_name" required>
+                    <button type="submit" class="submit-btn" id="submit-btn">Save Recommendation</button>
+                    <div class="loader" id="loader">Saving to database...</div>
+                </form>
+            </div>
+
+            <div class="locked-box" id="visitor-locked-section">
+                <strong>Public View Mode:</strong> Anyone can explore all cultural recommendations. Adding new entries is restricted to the portfolio owner.
+                <button type="button" class="login-prompt-btn" id="modal-login-btn">Sign in with Gmail (Owner)</button>
+            </div>
+
+            <button class="close-btn" type="button" onclick="closeModal()">Close / Cancel</button>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="all-responses-modal">
+        <div class="modal-content">
+            <h2>🌍 All Connections</h2>
+            <p class="subtitle">Everyone you've met globally (A-Z)</p>
+
+            <div id="all-responses-list"></div>
+
+            <button class="close-btn" type="button" onclick="closeAllResponsesModal()">Close</button>
+        </div>
+    </div>
+
+    <script src="https://unpkg.com/jsvectormap"></script>
+    <script src="https://unpkg.com/jsvectormap/dist/maps/world.js"></script>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-app.js";
+        import {
+            getAuth,
+            GoogleAuthProvider,
+            signInWithPopup,
+            signOut,
+            onAuthStateChanged
+        } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-auth.js";
+        import {
+            getFirestore,
+            collection,
+            getDocs,
+            addDoc,
+            serverTimestamp,
+            query,
+            orderBy
+        } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js";
+
+        // Configuração do projeto Firebase: mapwithfriends
+        const firebaseConfig = {
+            apiKey: "AIzaSyAhVqwa764XFTUsd0zIEFKtZiCdyIOTmdU",
+            authDomain: "mapwithfriends.firebaseapp.com",
+            projectId: "mapwithfriends",
+            storageBucket: "mapwithfriends.firebasestorage.app",
+            messagingSenderId: "293822119968",
+            appId: "1:293822119968:web:608afdbb274339d8df7c45"
+        };
+
+        const ALLOWED_OWNER_EMAIL = "paulo.renato.reche@gmail.com";
+        const COLLECTION_NAME = "recommendations";
+
+        // Apelidos comuns para compatibilidade com nomes do mapa
+        const COUNTRY_ALIASES = {
+            "korea": "south korea",
+            "republic of korea": "south korea",
+            "usa": "united states",
+            "united states of america": "united states",
+            "uk": "united kingdom"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+        const provider = new GoogleAuthProvider();
+        provider.setCustomParameters({ prompt: "select_account" });
+
+        let map;
+        let globalData = [];
+        let currentCountryName = "";
+        let isOwnerAuthenticated = false;
+
+        function normalizeCountryName(name) {
+            const clean = (name || "").trim().toLowerCase();
+            return COUNTRY_ALIASES[clean] || clean;
+        }
+
+        function getFlagEmoji(countryCode) {
+            if (!countryCode || countryCode.length !== 2) return "🌍";
+            const codePoints = countryCode.toUpperCase().split('').map(char => 127397 + char.charCodeAt());
+            return String.fromCodePoint(...codePoints);
+        }
+
+        function updateAuthUI() {
+            const authBtn = document.getElementById("auth-btn");
+            const authLabel = document.getElementById("auth-label");
+            const formSection = document.getElementById("owner-form-section");
+            const lockedSection = document.getElementById("visitor-locked-section");
+
+            if (isOwnerAuthenticated) {
+                authBtn.classList.add("signed-in");
+                authLabel.textContent = "Owner ✓ (Exit)";
+                formSection.style.display = "block";
+                lockedSection.style.display = "none";
+            } else {
+                authBtn.classList.remove("signed-in");
+                authLabel.textContent = "Sign in";
+                formSection.style.display = "none";
+                lockedSection.style.display = "block";
+            }
+        }
+
+        async function handleGoogleLogin() {
+            try {
+                const result = await signInWithPopup(auth, provider);
+                const email = (result.user.email || "").trim().toLowerCase();
+
+                if (email !== ALLOWED_OWNER_EMAIL) {
+                    await signOut(auth);
+                    alert("Acesso negado: apenas Paulo.renato.reche@gmail.com pode autenticar-se para adicionar dados.");
+                }
+            } catch (error) {
+                console.error("Erro no login:", error);
+                if (error.code !== "auth/popup-closed-by-user") {
+                    alert("Não foi possível concluir o login com o Google. Verifique se o domínio está autorizado no Firebase Authentication.");
+                }
+            }
+        }
+
+        async function handleLogout() {
+            try {
+                await signOut(auth);
+            } catch (error) {
+                console.error("Erro ao sair:", error);
+            }
+        }
+
+        document.getElementById("auth-btn").addEventListener("click", () => {
+            if (isOwnerAuthenticated) {
+                handleLogout();
+            } else {
+                handleGoogleLogin();
+            }
+        });
+
+        document.getElementById("modal-login-btn").addEventListener("click", handleGoogleLogin);
+
+        onAuthStateChanged(auth, (user) => {
+            const email = (user?.email || "").trim().toLowerCase();
+            isOwnerAuthenticated = Boolean(user && email === ALLOWED_OWNER_EMAIL);
+            updateAuthUI();
+        });
+
+        document.addEventListener("DOMContentLoaded", async () => {
+            map = new jsVectorMap({
+                selector: "#map-container",
+                map: "world",
+                backgroundColor: "#ffffff",
+                zoomOnScroll: true,
+                zoomButtons: false,
+                regionStyle: {
+                    initial: { fill: "#e5e5ea", stroke: "#ffffff", strokeWidth: 0.5 },
+                    selected: { fill: "rgba(52, 199, 89, 0.6)" },
+                    hover: { fill: "#c7c7cc" }
+                },
+                onRegionClick: function(event, code) {
+                    currentCountryName = map.regions[code].config.name;
+                    openModal(currentCountryName, getFlagEmoji(code));
+                }
+            });
+
+            setTimeout(() => {
+                const selector = document.getElementById("country-selector");
+                const regions = map.regions;
+                let optionsHTML = '<option value="" disabled selected>🔍 Search...</option>';
+
+                const sorted = Object.keys(regions).map(code => ({
+                    code: code, name: regions[code].config.name
+                }));
+
+                // Injeção Manual de Hong Kong
+                sorted.push({ code: "HK", name: "Hong Kong" });
+                sorted.sort((a, b) => a.name.localeCompare(b.name));
+
+                sorted.forEach(item => {
+                    optionsHTML += `<option value="${item.code}">${getFlagEmoji(item.code)} ${item.name}</option>`;
+                });
+
+                selector.innerHTML = optionsHTML;
+
+                selector.addEventListener("change", (e) => {
+                    const code = e.target.value;
+                    if (code === "HK") {
+                        currentCountryName = "Hong Kong";
+                        openModal(currentCountryName, getFlagEmoji("HK"));
+                    } else {
+                        currentCountryName = map.regions[code].config.name;
+                        openModal(currentCountryName, getFlagEmoji(code));
+                    }
+                    e.target.value = "";
+                });
+            }, 500);
+
+            updateAuthUI();
+            await loadMapData();
+        });
+
+        function highlightActiveCountries() {
+            if (!map || !map.regions) return;
+
+            const normalizedCountriesWithData = new Set(
+                globalData.map(item => normalizeCountryName(item.country))
+            );
+            const codesToSelect = [];
+
+            for (let code in map.regions) {
+                const mapNameNormalized = normalizeCountryName(map.regions[code].config.name);
+                if (normalizedCountriesWithData.has(mapNameNormalized)) {
+                    codesToSelect.push(code);
+                }
+            }
+
+            if (codesToSelect.length > 0) {
+                map.setSelectedRegions(codesToSelect);
+            }
+        }
+
+        async function loadMapData() {
+            try {
+                const q = query(collection(db, COLLECTION_NAME), orderBy("createdAt", "desc"));
+                const querySnapshot = await getDocs(q);
+                globalData = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                highlightActiveCountries();
+            } catch (error) {
+                console.error("Erro ao carregar dados do Firestore:", error);
+            }
+        }
+
+        window.openModal = function(countryName, flagEmoji) {
+            document.getElementById("country-title").innerText = flagEmoji + " " + countryName;
+            const historyContainer = document.getElementById("previous-answers");
+            historyContainer.innerHTML = "";
+
+            const targetNormalized = normalizeCountryName(countryName);
+            const countryData = globalData.filter(
+                item => normalizeCountryName(item.country) === targetNormalized
+            );
+
+            if (countryData.length > 0) {
+                countryData.forEach(entry => {
+                    historyContainer.innerHTML += `
+                        <div class="history-card">
+                            <p><span>Food:</span> ${entry.food}</p>
+                            <p><span>City:</span> ${entry.city}</p>
+                            <p><span>Nature:</span> ${entry.nature}</p>
+                            <p><span>Music:</span> ${entry.music}</p>
+                            <p><span>Name:</span> ${entry.name || "Anonymous"}</p>
+                        </div>
+                    `;
+                });
+            } else {
+                historyContainer.innerHTML = `<p style="color: #8e8e93; font-size: 14px; font-style: italic;">No recommendations yet.</p>`;
+            }
+
+            updateAuthUI();
+            document.getElementById("modal").style.display = "flex";
+        };
+
+        window.closeModal = function() {
+            document.getElementById("modal").style.display = "none";
+            document.getElementById("recommendation-form").reset();
+        };
+
+        document.getElementById("view-all-btn").addEventListener("click", () => {
+            const listContainer = document.getElementById("all-responses-list");
+            listContainer.innerHTML = "";
+
+            if (globalData.length === 0) {
+                listContainer.innerHTML = `<p style="color: #8e8e93; text-align: center; margin-top: 20px;">No recommendations yet.</p>`;
+            } else {
+                const sortedData = [...globalData].sort((a, b) =>
+                    (a.country || "").localeCompare(b.country || "")
+                );
+
+                sortedData.forEach(entry => {
+                    let cCode = "";
+                    const normCountry = normalizeCountryName(entry.country);
+
+                    if (normCountry === "hong kong") {
+                        cCode = "HK";
+                    } else {
+                        for (let code in map.regions) {
+                            if (normalizeCountryName(map.regions[code].config.name) === normCountry) {
+                                cCode = code;
+                                break;
+                            }
+                        }
+                    }
+                    const emj = getFlagEmoji(cCode);
+
+                    listContainer.innerHTML += `
+                        <div class="history-card">
+                            <h4>${emj} ${entry.country}</h4>
+                            <p><span>Food:</span> ${entry.food}</p>
+                            <p><span>City:</span> ${entry.city}</p>
+                            <p><span>Nature:</span> ${entry.nature}</p>
+                            <p><span>Music:</span> ${entry.music}</p>
+                            <p><span>Name:</span> ${entry.name || "Anonymous"}</p>
+                        </div>
+                    `;
+                });
+            }
+            document.getElementById("all-responses-modal").style.display = "flex";
+        });
+
+        window.closeAllResponsesModal = function() {
+            document.getElementById("all-responses-modal").style.display = "none";
+        };
+
+        document.getElementById("recommendation-form").addEventListener("submit", async (e) => {
+            e.preventDefault();
+
+            if (!isOwnerAuthenticated) {
+                alert("Apenas o proprietário autenticado pode salvar novas recomendações.");
+                return;
+            }
+
+            const btn = document.getElementById("submit-btn");
+            const loader = document.getElementById("loader");
+
+            btn.style.display = "none";
+            loader.style.display = "block";
+
+            const formData = {
+                country: currentCountryName.trim(),
+                food: document.getElementById("q1_food").value.trim(),
+                city: document.getElementById("q2_city").value.trim(),
+                nature: document.getElementById("q3_nature").value.trim(),
+                music: document.getElementById("q4_music").value.trim(),
+                name: document.getElementById("q5_name").value.trim(),
+                createdAt: serverTimestamp()
+            };
+
+            try {
+                const docRef = await addDoc(collection(db, COLLECTION_NAME), formData);
+                globalData.unshift({ id: docRef.id, ...formData });
+                highlightActiveCountries();
+                window.closeModal();
+            } catch (error) {
+                console.error("Erro ao salvar no Firestore:", error);
+                alert("Erro ao salvar. Verifique sua autenticação e as regras do Firestore.");
+            } finally {
+                btn.style.display = "block";
+                loader.style.display = "none";
+            }
+        });
+    </script>
+</body>
+</html>
